@@ -67,17 +67,36 @@ function uniqueId(state: WorkspaceState, base: string): string {
   return id;
 }
 
-/** First row where a panel of the given width fits without overlapping. */
-function findFreeRow(state: WorkspaceState, col: number, colSpan: number): number {
-  for (let row = 1; row <= MAX_ROWS; row++) {
-    const collides = state.panels.some(
-      (p) =>
-        row < p.row + p.rowSpan &&
-        p.row < row + 1 &&
-        col < p.col + p.colSpan &&
-        p.col < col + colSpan
-    );
-    if (!collides) return row;
+/** True when this cell rectangle overlaps any existing panel. */
+function overlaps(
+  state: WorkspaceState,
+  col: number,
+  colSpan: number,
+  row: number,
+  rowSpan: number,
+  ignoreId?: string
+): boolean {
+  return state.panels.some(
+    (p) =>
+      p.id !== ignoreId &&
+      row < p.row + p.rowSpan &&
+      p.row < row + rowSpan &&
+      col < p.col + p.colSpan &&
+      p.col < col + colSpan
+  );
+}
+
+/** First row at or below `from` where the panel fits without overlapping. */
+function firstFreeRow(
+  state: WorkspaceState,
+  col: number,
+  colSpan: number,
+  rowSpan: number,
+  from = 1,
+  ignoreId?: string
+): number {
+  for (let row = Math.max(1, from); row <= MAX_ROWS; row++) {
+    if (!overlaps(state, col, colSpan, row, rowSpan, ignoreId)) return row;
   }
   return MAX_ROWS;
 }
@@ -270,10 +289,10 @@ export function applyOperations(
         const colSpan = clamp(typeof o.colSpan === 'number' ? o.colSpan : 4, 1, next.gridColumns);
         const col = clamp(typeof o.col === 'number' ? o.col : 1, 1, next.gridColumns - colSpan + 1);
         const rowSpan = clamp(typeof o.rowSpan === 'number' ? o.rowSpan : 1, 1, 4);
-        const row =
-          typeof o.row === 'number'
-            ? clamp(o.row, 1, MAX_ROWS)
-            : findFreeRow(next, col, colSpan);
+        // The model picks rows that are already occupied, so treat its row as a starting
+        // point and slide down to the first that actually fits.
+        const requestedRow = typeof o.row === 'number' ? clamp(o.row, 1, MAX_ROWS) : 1;
+        const row = firstFreeRow(next, col, colSpan, rowSpan, requestedRow);
 
         const data = sanitizePanelData(o.data);
         if (widget === 'dataTable' && !data) {
@@ -310,6 +329,14 @@ export function applyOperations(
         if (typeof o.col === 'number')
           panel.col = clamp(o.col, 1, next.gridColumns - panel.colSpan + 1);
         if (typeof o.row === 'number') panel.row = clamp(o.row, 1, MAX_ROWS);
+        panel.row = firstFreeRow(
+          next,
+          panel.col,
+          panel.colSpan,
+          panel.rowSpan,
+          panel.row,
+          panel.id
+        );
         done(`Moved "${panel.name}" to col ${panel.col}, row ${panel.row}`);
         break;
       }
