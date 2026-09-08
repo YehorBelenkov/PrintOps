@@ -4,11 +4,11 @@ import { extractJsonArray, stripCliNoise } from '@/lib/workspace/parse';
 import { runAgent, AgentError } from '@/lib/agent/runAgent';
 import { buildAssistantPrompt, DesignSession, HistoryTurn } from '@/lib/assistant/prompt';
 import {
-  BRIEF_FIELDS,
   FIELD_IDS,
   MAX_QUESTIONS,
   buildImagePrompt,
   missingEssentials,
+  remainingFields,
   sanitizeBrief,
   unresolvedLiteral,
   StickerBrief,
@@ -41,9 +41,8 @@ surface to the second colour, and the accent to the most vivid colour.`;
 
 /** Keeps the interview moving when the agent returns something unusable. */
 function fallbackQuestion(brief: StickerBrief) {
-  const next =
-    BRIEF_FIELDS.find((f) => f.essential && !brief[f.id]) ??
-    BRIEF_FIELDS.find((f) => !brief[f.id]);
+  const remaining = remainingFields(brief);
+  const next = remaining.find((f) => f.essential) ?? remaining[0];
   if (!next) return null;
   return {
     field: next.id,
@@ -145,7 +144,16 @@ export async function POST(request: NextRequest) {
   }
 
   // --- Design interview ---
-  if (reply.mode === 'design' || (!state && reply.mode !== 'workspace')) {
+  // An interview in progress must survive the model forgetting to repeat mode:"design".
+  // Without this, the final answer falls through to the dashboard branch, finds no
+  // operations, and reports "Applied 0 of 1 change".
+  const operations = Array.isArray(reply.operations) ? reply.operations : null;
+
+  if (
+    reply.mode === 'design' ||
+    (design && !operations) ||
+    (!state && reply.mode !== 'workspace')
+  ) {
     const merged: StickerBrief = { ...(design?.brief ?? {}), ...sanitizeBrief(reply.known) };
     const askedCount = design?.askedCount ?? 0;
     const seed = design?.request ?? command;

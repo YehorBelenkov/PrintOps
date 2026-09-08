@@ -50,6 +50,19 @@ export function missingEssentials(brief: StickerBrief): string[] {
   return ESSENTIAL_IDS.filter((id) => !brief[id]);
 }
 
+const NO_TEXT = /^(none|no text|nothing|no lettering|n\/a)\b/i;
+
+/** Typography is meaningless once the client has said the sticker carries no words. */
+export function isRelevant(fieldId: string, brief: StickerBrief): boolean {
+  if (fieldId !== 'typography') return true;
+  return !(brief.text && NO_TEXT.test(brief.text));
+}
+
+/** Fields still worth asking about, in order. */
+export function remainingFields(brief: StickerBrief): BriefField[] {
+  return BRIEF_FIELDS.filter((f) => !brief[f.id] && isRelevant(f.id, brief));
+}
+
 const PLACEHOLDER =
   /\b(e\.?g\.?|for example|such as|placeholder|your brand|brand name only|tagline only|name only)\b/i;
 
@@ -76,7 +89,7 @@ export function buildInterviewPrompt(
     .map(([k, v]) => `  ${k}: ${v}`)
     .join('\n');
 
-  const outstanding = BRIEF_FIELDS.filter((f) => !brief[f.id])
+  const outstanding = remainingFields(brief)
     .map((f) => `  ${f.id} — ${f.label}: ${f.hint}${f.essential ? ' [essential]' : ''}`)
     .join('\n');
 

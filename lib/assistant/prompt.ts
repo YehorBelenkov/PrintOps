@@ -9,7 +9,7 @@ import {
 import { SCENE_PRESETS, SCENE_PRESET_NAMES } from '@/lib/workspace/scene';
 import { describeTables } from '@/lib/data/dataset';
 import { describeWorkspace } from '@/lib/workspace/describe';
-import { BRIEF_FIELDS, MAX_QUESTIONS, StickerBrief } from '@/lib/sticker/brief';
+import { BRIEF_FIELDS, MAX_QUESTIONS, StickerBrief, remainingFields } from '@/lib/sticker/brief';
 
 export interface DesignSession {
   request: string;
@@ -142,7 +142,7 @@ Brief fields you may ask about: ${BRIEF_FIELDS.map((f) => f.id).join(', ')}.`;
     .map(([k, v]) => `  ${k}: ${v}`)
     .join('\n');
 
-  const outstanding = BRIEF_FIELDS.filter((f) => !design.brief[f.id])
+  const outstanding = remainingFields(design.brief)
     .map(
       (f) =>
         `  ${f.id} — ${f.label}: ${f.hint}${f.essential ? ' [essential]' : ''}` +
