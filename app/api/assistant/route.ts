@@ -90,8 +90,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'A message is required.' }, { status: 400 });
   }
 
+  // Public endpoint: a theme that is not an object would crash the operation engine.
   const state =
-    body.state && Array.isArray(body.state.panels) ? body.state : null;
+    body.state &&
+    Array.isArray(body.state.panels) &&
+    body.state.theme &&
+    typeof body.state.theme === 'object'
+      ? body.state
+      : null;
 
   const design: DesignSession | null = body.design
     ? {

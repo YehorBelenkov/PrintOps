@@ -12,6 +12,29 @@ interface DesignSession {
   askedCount: number;
 }
 
+/** Waits run 15-90s, so a static label reads as a hang. Count up and say why. */
+function ThinkingIndicator() {
+  const [seconds, setSeconds] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setSeconds((value) => value + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="flex justify-start">
+      <div className="bg-current/5 rounded-xl px-3 py-2 text-sm opacity-60">
+        Igor is thinking… {seconds}s
+        {seconds > 25 && (
+          <span className="block mt-1 opacity-80">
+            The model provider is busy. Retrying automatically.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant';
@@ -319,13 +342,7 @@ export function CommandInterface({ state, onStateChange, onReset }: CommandInter
           ))
         )}
 
-        {isProcessing && (
-          <div className="flex justify-start">
-            <div className="bg-current/5 rounded-xl px-3 py-2 text-sm opacity-60">
-              Igor is thinking…
-            </div>
-          </div>
-        )}
+        {isProcessing && <ThinkingIndicator />}
       </div>
 
       <div className="p-3 border-t space-y-2 pb-[max(0.75rem,env(safe-area-inset-bottom))]">

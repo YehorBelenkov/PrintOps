@@ -127,15 +127,24 @@ const TRANSIENT =
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * Sends a prompt for a single stateless model turn.
+ * NVIDIA's endpoint has been measured refusing ~50% of calls with "temporarily
+ * overloaded", and a refusal costs about as long as a success. Retrying is the only
+ * lever available: the catalogue holds one model, so there is nothing to fail over to.
+ * Six attempts at a 50% refusal rate leaves roughly a 1.6% chance of failing overall.
+ */
+const MAX_ATTEMPTS = Number(process.env.PRINTOPS_MAX_ATTEMPTS ?? 6);
+
+/** Kept under the route's maxDuration so we surface an error rather than being killed. */
+const RETRY_BUDGET_MS = Number(process.env.PRINTOPS_RETRY_BUDGET_MS ?? 150_000);
+
+/** Measured: a refused call takes ~14s, a successful one ~15-20s. */
+const ESTIMATED_ATTEMPT_MS = 20_000;
+
+/**
+ * Sends a prompt for a single stateless model turn, retrying provider hiccups.
  *
  * With AGENT_API_URL set the work happens on the agent service over HTTPS, which is
  * how a serverless deployment reaches the sandbox. Otherwise it runs locally.
- *
- * Locally, both the prompt and the command consuming it are staged inside the sandbox
- * as base64: no quote or newline survives the Windows -> WSL -> bash -> sandbox chain,
- * because Node escapes double quotes for the Windows command line and the sandbox
- * re-parses argv through a shell.
  *
  * `capability model run` rather than `agent`: the agent keeps a session, so its
  * context grows with every message until requests time out.
@@ -143,57 +152,58 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function runAgent(
   prompt: string,
   timeoutSeconds = 180,
-  retries = 2
+  attempts = MAX_ATTEMPTS
 ): Promise<string> {
-  if (AGENT_API_URL) return runAgentRemote(prompt, timeoutSeconds, retries);
+  const runOnce = AGENT_API_URL
+    ? () => remoteAttempt(prompt, timeoutSeconds)
+    : () => localAttempt(prompt, timeoutSeconds);
 
-  const encodedPrompt = Buffer.from(prompt, 'utf8').toString('base64');
+  const deadline = Date.now() + RETRY_BUDGET_MS;
 
   for (let attempt = 0; ; attempt++) {
-    const id = randomUUID();
-    const promptPath = `/tmp/printops-${id}.txt`;
-    const scriptPath = `/tmp/printops-${id}.sh`;
-
-    const script = `openclaw capability model run --thinking off --prompt "$(cat ${promptPath})"`;
-    const encodedScript = Buffer.from(script, 'utf8').toString('base64');
-
-    const inner =
-      `echo ${encodedPrompt} | base64 -d > ${promptPath}; ` +
-      `echo ${encodedScript} | base64 -d > ${scriptPath}; ` +
-      `bash ${scriptPath}; rm -f ${promptPath} ${scriptPath}`;
-
-    const out = await runInSandbox(inner, timeoutSeconds);
-
+    const out = await runOnce();
     if (!TRANSIENT.test(out)) return out;
-    if (attempt >= retries) {
+
+    // Jitter keeps concurrent users from retrying in lockstep against a busy provider.
+    const backoff = Math.min(1000 * 2 ** attempt, 8000) + Math.random() * 500;
+    const outOfTime = Date.now() + backoff + ESTIMATED_ATTEMPT_MS > deadline;
+
+    if (attempt + 1 >= attempts || outOfTime) {
       throw new AgentError(
-        'The model provider is having a moment. Wait a few seconds and try again.',
-        out.slice(-300)
+        'The model provider is overloaded right now. Please try again in a moment.',
+        `attempts=${attempt + 1} :: ${out.slice(-300)}`
       );
     }
-    await delay(2000 * (attempt + 1));
+    await delay(backoff);
   }
 }
 
-async function runAgentRemote(
-  prompt: string,
-  timeoutSeconds: number,
-  retries: number
-): Promise<string> {
-  for (let attempt = 0; ; attempt++) {
-    const out = await agentFetch<{ output: string }>('/v1/agent', {
-      method: 'POST',
-      body: JSON.stringify({ prompt }),
-      signal: AbortSignal.timeout((timeoutSeconds + 20) * 1000),
-    }).then((r) => r.output ?? '');
+/**
+ * Both the prompt and the command consuming it are staged inside the sandbox as
+ * base64: no quote or newline survives the Windows -> WSL -> bash -> sandbox chain,
+ * because Node escapes double quotes for the Windows command line and the sandbox
+ * re-parses argv through a shell.
+ */
+async function localAttempt(prompt: string, timeoutSeconds: number): Promise<string> {
+  const id = randomUUID();
+  const promptPath = `/tmp/printops-${id}.txt`;
+  const scriptPath = `/tmp/printops-${id}.sh`;
 
-    if (!TRANSIENT.test(out)) return out;
-    if (attempt >= retries) {
-      throw new AgentError(
-        'The model provider is having a moment. Wait a few seconds and try again.',
-        out.slice(-300)
-      );
-    }
-    await delay(2000 * (attempt + 1));
-  }
+  const script = `openclaw capability model run --thinking off --prompt "$(cat ${promptPath})"`;
+
+  const inner =
+    `echo ${Buffer.from(prompt, 'utf8').toString('base64')} | base64 -d > ${promptPath}; ` +
+    `echo ${Buffer.from(script, 'utf8').toString('base64')} | base64 -d > ${scriptPath}; ` +
+    `bash ${scriptPath}; rm -f ${promptPath} ${scriptPath}`;
+
+  return runInSandbox(inner, timeoutSeconds);
+}
+
+async function remoteAttempt(prompt: string, timeoutSeconds: number): Promise<string> {
+  const result = await agentFetch<{ output: string }>('/v1/agent', {
+    method: 'POST',
+    body: JSON.stringify({ prompt }),
+    signal: AbortSignal.timeout((timeoutSeconds + 20) * 1000),
+  });
+  return result.output ?? '';
 }
