@@ -98,11 +98,14 @@ WIDGETS: ${widgets}
 PALETTES: ${palettes}
 
 BACKGROUND EFFECTS (setEffect): ${canvasFx}
-MOTION: off calm normal lively
+MOTION: off calm normal lively — how existing UI animates, NOT a background animation.
 
 PANEL TREATMENTS (stylePanel.effect): ${panelFx}
 
 SCENE PRESETS (setScene): ${scenes}
+Anything falling, floating, drifting or flying in the background is a scene: use
+setScene. "animated background", "particles", or a named thing like space, rain or
+snow all mean setScene, never setEffect motion.
 setScene also takes raw particle settings, so you can invent scenes or override a preset:
   particles: count 0-420, shape dot|streak|star|flake|bubble|square|ring, minSize/maxSize 0.5-48,
   speed 0-900, direction down|up|left|right|drift|burst, sway 0-120, colors (hex, max 6),

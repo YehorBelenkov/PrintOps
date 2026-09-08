@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { randomUUID } from 'crypto';
 import { runInSandbox, AgentError, agentFetch, isRemoteAgent } from '@/lib/agent/runAgent';
+import { explainFailure } from '@/lib/agent/explainFailure';
 import { buildImagePrompt, sanitizeBrief } from '@/lib/sticker/brief';
 import { saveSticker } from '@/lib/stickers/store';
 
@@ -66,7 +67,11 @@ export async function POST(request: NextRequest) {
             id: result.id,
             url: `/api/stickers/${result.id}`,
           })
-        : NextResponse.json({ generated: false, prompt, reason: result.reason });
+        : NextResponse.json({
+            generated: false,
+            prompt,
+            reason: explainFailure(result.reason ?? '', 'The provider returned no image.'),
+          });
     } catch (error) {
       if (error instanceof AgentError) {
         return NextResponse.json({ error: error.message, prompt }, { status: 502 });
@@ -131,7 +136,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       generated: false,
       prompt,
-      reason: log.trim().slice(-600) || 'The provider returned no image.',
+      reason: explainFailure(log, 'The provider returned no image.'),
     });
   }
 
