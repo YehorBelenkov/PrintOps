@@ -327,6 +327,10 @@ export function applyOperations(
       case 'addPanel': {
         if (next.panels.length >= MAX_PANELS) { fail(`Panel limit (${MAX_PANELS}) reached.`); break; }
         const widget = String(o.widget ?? '') as WidgetType;
+        if (!widget) {
+          fail('The agent left out the widget name when adding a panel.');
+          break;
+        }
         if (!WIDGET_TYPES.includes(widget)) {
           fail(`Unknown widget "${o.widget}". Valid: ${WIDGET_TYPES.join(', ')}`);
           break;
@@ -343,6 +347,18 @@ export function applyOperations(
         const data = sanitizePanelData(o.data);
         if (widget === 'dataTable' && !data) {
           fail(`A dataTable panel needs a valid table. Available: ${TABLE_NAMES.join(', ')}`);
+          break;
+        }
+
+        // Asked to "show" something already on screen, the model adds a second copy.
+        // Two data tables are fine unless they show the same table.
+        const duplicate = next.panels.find((p) =>
+          widget === 'dataTable'
+            ? p.widget === 'dataTable' && p.data?.table === data?.table
+            : p.widget === widget
+        );
+        if (duplicate) {
+          fail(`"${duplicate.name}" already shows that. Nothing added.`);
           break;
         }
 

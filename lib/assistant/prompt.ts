@@ -9,7 +9,13 @@ import {
 import { SCENE_PRESETS, SCENE_PRESET_NAMES } from '@/lib/workspace/scene';
 import { describeTables, TABLE_NAMES } from '@/lib/data/dataset';
 import { describeWorkspace } from '@/lib/workspace/describe';
-import { BRIEF_FIELDS, MAX_QUESTIONS, StickerBrief, remainingFields } from '@/lib/sticker/brief';
+import {
+  BRIEF_FIELDS,
+  MAX_QUESTIONS,
+  StickerBrief,
+  missingEssentials,
+  remainingFields,
+} from '@/lib/sticker/brief';
 
 export interface DesignSession {
   request: string;
@@ -69,6 +75,9 @@ ${describeWorkspace(state)}`;
 - Change only what was asked for. Emit the smallest set of operations that satisfies
   the request, and nothing else.
 - "Container", "card", "box" and "tile" all mean panel.
+- Read the layout above before adding a panel. If one with that widget is already on the
+  grid, do not add a second: say so in "note" and leave operations empty.
+- Every addPanel needs a "widget" field. Never omit it or send null.
 - A request about panels is not a request about the background. If the user asks to
   animate, style or move panels, do not emit setScene, clearScene, setEffect,
   applyPalette or setTheme at all.
@@ -182,6 +191,14 @@ Brief fields you may ask about: ${BRIEF_FIELDS.map((f) => f.id).join(', ')}.`;
     )
     .join('\n');
 
+  // A settled brief must not hijack unrelated conversation: greetings and dashboard
+  // requests were being answered by re-emitting the finished design.
+  const settled = missingEssentials(design.brief).length === 0
+    ? `\nTHE BRIEF IS SETTLED. Only stay in mode "design" if this message changes the
+sticker. Small talk, a question, or anything about the dashboard is mode "workspace" —
+do not repeat the summary or the image prompt.\n`
+    : '';
+
   return `================ JOB 2: STICKER DESIGN ================
 You never draw the artwork yourself. You interview the client until the brief is
 unambiguous, then hand it to an illustrator.
@@ -191,7 +208,7 @@ Original request: ${design.request}
 Established so far:
 ${known || '  (nothing yet)'}
 Questions asked: ${design.askedCount} of ${MAX_QUESTIONS}.
-
+${settled}
 BRIEF FIELDS STILL OPEN:
 ${outstanding || '  (all fields settled)'}
 
@@ -231,8 +248,12 @@ export function buildAssistantPrompt(options: {
     ? `ROUTING — decide which job this request belongs to:
 - Layout, colour, theme, panels, widgets, "make it purple", "add a panel" -> mode "workspace".
 - Create, draw, design or generate a sticker, logo, decal or illustration -> mode "design".
-- If an interview is already in progress, stay in mode "design" until the brief is
-  ready, unless the user clearly switches back to talking about the dashboard.`
+- While an interview is running and the brief is NOT settled, stay in mode "design".
+- Once the brief is settled the interview is over. A greeting, small talk, a question, or
+  anything about the dashboard is mode "workspace". Only go back to mode "design" if the
+  user asks to change the sticker itself.
+- Greetings and small talk are always mode "workspace" with empty operations and a short
+  reply in "note". Never answer them with a design question.`
     : 'Every request in this conversation belongs to mode "design".';
 
   return `You are Igor, the assistant inside a print-shop app. You have two jobs.
