@@ -103,6 +103,17 @@ ${describeTables()}
   example: {"op":"addPanel","name":"Overdue","widget":"dataTable","colSpan":8,"data":{"table":"orders","columns":["id","customer","due"],"limit":8,"sortBy":"due","sortDir":"asc","filterColumn":"status","filterValue":"Cutting"}}
   Tables need colSpan 6 or more.
 
+  "show me the database", "show everything we have" or any request naming no single
+  table means ALL ${TABLE_NAMES.length} tables, one panel each, two per row, starting on
+  the first free row below the existing panels. Never show just one, and never leave a
+  table out. The row numbers below are illustrative — compute the real first free row
+  from the layout above.
+  Correct shape: [
+    {"op":"addPanel","name":"Customers","widget":"dataTable","col":1,"colSpan":6,"row":3,"rowSpan":2,"data":{"table":"customers","limit":10}},
+    {"op":"addPanel","name":"Orders","widget":"dataTable","col":7,"colSpan":6,"row":3,"rowSpan":2,"data":{"table":"orders","limit":10}},
+    … and the same for every remaining table: ${TABLE_NAMES.join(', ')}
+  ]
+
 WIDGETS: ${widgets}
 
 PALETTES: ${palettes}
