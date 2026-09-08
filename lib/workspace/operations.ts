@@ -101,6 +101,26 @@ function firstFreeRow(
   return MAX_ROWS;
 }
 
+/**
+ * Keeps `anchorId` exactly where it was put and slides everything else down until the
+ * grid is clean. Moving a panel onto a taken spot should displace its neighbours, not
+ * quietly relocate the panel the user asked to move.
+ */
+function reflowAround(state: WorkspaceState, anchorId: string): void {
+  const anchor = state.panels.find((p) => p.id === anchorId);
+  if (!anchor) return;
+
+  const others = state.panels
+    .filter((p) => p.id !== anchorId)
+    .sort((a, b) => a.row - b.row || a.col - b.col);
+
+  const probe: WorkspaceState = { ...state, panels: [anchor] };
+  for (const panel of others) {
+    panel.row = firstFreeRow(probe, panel.col, panel.colSpan, panel.rowSpan, panel.row);
+    probe.panels.push(panel);
+  }
+}
+
 function sanitizeStyle(input: Record<string, unknown>): PanelStyle {
   const out: PanelStyle = {};
   if (isBackground(input.background)) out.background = String(input.background).trim();
@@ -329,14 +349,7 @@ export function applyOperations(
         if (typeof o.col === 'number')
           panel.col = clamp(o.col, 1, next.gridColumns - panel.colSpan + 1);
         if (typeof o.row === 'number') panel.row = clamp(o.row, 1, MAX_ROWS);
-        panel.row = firstFreeRow(
-          next,
-          panel.col,
-          panel.colSpan,
-          panel.rowSpan,
-          panel.row,
-          panel.id
-        );
+        reflowAround(next, panel.id);
         done(`Moved "${panel.name}" to col ${panel.col}, row ${panel.row}`);
         break;
       }
