@@ -6,7 +6,7 @@ export function describeWorkspace(state: WorkspaceState): string {
     ? [...state.panels]
         .sort((a, b) => a.row - b.row || a.col - b.col)
         .map((p) => {
-          const style = Object.entries(p.style)
+          const style = Object.entries(p.style ?? {})
             .map(([k, v]) => `${k}=${v}`)
             .join(' ');
           return `  ${p.id} | "${p.name}" | widget:${p.widget} | col ${p.col}-${

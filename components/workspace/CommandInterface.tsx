@@ -175,6 +175,11 @@ export function CommandInterface({ state, onStateChange, onReset }: CommandInter
 
       if (data.generated) {
         window.dispatchEvent(new CustomEvent(STICKER_SAVED_EVENT));
+        // The brief is spent. Leaving it open keeps the prompt in interview mode, which
+        // strips the dashboard vocabulary and makes the agent invent tables and widgets.
+        setDesign(null);
+        setPendingField(null);
+        setImagePrompt('');
       }
 
       push({

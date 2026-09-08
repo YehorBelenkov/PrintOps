@@ -7,7 +7,7 @@ import {
   PANEL_EFFECT_NAMES,
 } from '@/lib/workspace/effects';
 import { SCENE_PRESETS, SCENE_PRESET_NAMES } from '@/lib/workspace/scene';
-import { describeTables } from '@/lib/data/dataset';
+import { describeTables, TABLE_NAMES } from '@/lib/data/dataset';
 import { describeWorkspace } from '@/lib/workspace/describe';
 import { BRIEF_FIELDS, MAX_QUESTIONS, StickerBrief, remainingFields } from '@/lib/sticker/brief';
 
@@ -68,16 +68,26 @@ ${describeWorkspace(state)}`;
   const scope = `SCOPE OF A CHANGE — read this before choosing operations:
 - Change only what was asked for. Emit the smallest set of operations that satisfies
   the request, and nothing else.
+- "Container", "card", "box" and "tile" all mean panel.
 - A request about panels is not a request about the background. If the user asks to
   animate, style or move panels, do not emit setScene, clearScene, setEffect,
   applyPalette or setTheme at all.
+  "animate the containers" -> one stylePanel per panel, each with an "effect".
+  Correct: [{"op":"stylePanel","target":"Print Queue","effect":"float"},
+            {"op":"stylePanel","target":"Revenue","effect":"float"}]
+  Wrong:   setEffect, setScene, or anything touching the background.
 - A request about the background is not a request about panels. Leave panel styles alone
   unless the user mentions them.
 - Never "improve" something the user did not raise.`;
 
   // A design interview only needs enough dashboard context to notice a topic switch.
+  // The names still go in: without them the agent invents tables and widgets whenever a
+  // finished brief is left open.
   if (!full) {
-    return `${header}\n\n${operations}\n\n${scope}`;
+    const vocabulary = `TABLES: ${TABLE_NAMES.join(' ')}
+WIDGETS: ${WIDGET_TYPES.join(' ')}
+Use only these names. Never invent a table or widget.`;
+    return `${header}\n\n${vocabulary}\n\n${operations}\n\n${scope}`;
   }
 
   const widgets = WIDGET_TYPES.join(' ');
@@ -101,11 +111,12 @@ BACKGROUND EFFECTS (setEffect): ${canvasFx}
 MOTION: off calm normal lively — how existing UI animates, NOT a background animation.
 
 PANEL TREATMENTS (stylePanel.effect): ${panelFx}
+Panels are also called containers, cards, boxes or tiles. Animating any of those means
+stylePanel.effect on the panels concerned — never setScene, which cannot touch a panel.
 
-SCENE PRESETS (setScene): ${scenes}
-Anything falling, floating, drifting or flying in the background is a scene: use
-setScene. "animated background", "particles", or a named thing like space, rain or
-snow all mean setScene, never setEffect motion.
+SCENE PRESETS (setScene) — these fill the PAGE BACKGROUND ONLY: ${scenes}
+Particles behind the whole page ("animated background", "space", "rain", "snow") are
+setScene, not setEffect motion.
 setScene also takes raw particle settings, so you can invent scenes or override a preset:
   particles: count 0-420, shape dot|streak|star|flake|bubble|square|ring, minSize/maxSize 0.5-48,
   speed 0-900, direction down|up|left|right|drift|burst, sway 0-120, colors (hex, max 6),
