@@ -59,18 +59,91 @@ async function runInSandbox(innerScript, timeoutSeconds) {
 
 const b64 = (text) => Buffer.from(text, 'utf8').toString('base64');
 
-async function runAgent(prompt, timeoutSeconds = 180) {
-  const id = randomUUID();
-  const promptPath = `/tmp/printops-${id}.txt`;
-  const scriptPath = `/tmp/printops-${id}.sh`;
-  const script = `openclaw capability model run --thinking off --prompt "$(cat ${promptPath})"`;
+// --- fast inference path ---
+//
+// The OpenClaw CLI costs ~13s of Node startup per call, which dwarfs the request
+// itself: NVIDIA answers in ~0.4s. So post straight to NemoClaw's managed route
+// from inside the sandbox with curl. The key still lives outside the container and
+// egress policy still applies, because the proxy is what injects and enforces both.
+//
+// Measured on this droplet: 2.9s for an answer, 0.44s for a refusal, against
+// 20-26s either way through the CLI.
 
-  return runInSandbox(
-    `echo ${b64(prompt)} | base64 -d > ${promptPath}; ` +
-      `echo ${b64(script)} | base64 -d > ${scriptPath}; ` +
-      `bash ${scriptPath}; rm -f ${promptPath} ${scriptPath}`,
-    timeoutSeconds
-  );
+const PROXY = process.env.SANDBOX_PROXY ?? 'http://10.200.0.1:3128';
+const INFERENCE_URL = 'https://inference.local/v1/chat/completions';
+const MODEL = process.env.MODEL ?? 'nvidia/nemotron-3-super-120b-a12b';
+const FAST_ATTEMPTS = Number(process.env.FAST_ATTEMPTS ?? 4);
+const OVERLOADED = /temporarily overloaded|rate.?limit|\b(429|500|502|503|504)\b/i;
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let containerName = '';
+
+/** Cached because the name only changes when the sandbox is recreated. */
+async function sandboxContainer() {
+  if (containerName) return containerName;
+  const { stdout } = await execFileAsync('docker', ['ps', '--format', '{{.Names}}']);
+  const found = stdout.split('\n').find((n) => n.includes(`--${SANDBOX}-`));
+  if (!found) throw new Error(`No running container for sandbox "${SANDBOX}".`);
+  containerName = found.trim();
+  return containerName;
+}
+
+/** One completion. The prompt goes over stdin, so no shell ever sees it. */
+async function completeOnce(prompt, timeoutSeconds) {
+  const container = await sandboxContainer();
+
+  const body = JSON.stringify({
+    model: MODEL,
+    messages: [{ role: 'user', content: prompt }],
+    max_tokens: 4096,
+    temperature: 0.2,
+    stream: false,
+    // Nemotron emits its reasoning into content unless this is off.
+    chat_template_kwargs: { thinking: false },
+  });
+
+  const args = [
+    'exec', '-i',
+    '-e', `https_proxy=${PROXY}`,
+    container,
+    'curl', '-sk', '-m', String(timeoutSeconds),
+    INFERENCE_URL,
+    '-H', 'Content-Type: application/json',
+    '--data-binary', '@-',
+  ];
+
+  const pending = execFileAsync('docker', args, {
+    maxBuffer: 10 * 1024 * 1024,
+    timeout: (timeoutSeconds + 10) * 1000,
+  });
+  pending.child.stdin.end(body);
+
+  const { stdout } = await pending;
+
+  try {
+    const parsed = JSON.parse(stdout);
+    if (parsed.error) return String(parsed.error.message ?? 'inference error');
+    return parsed.choices?.[0]?.message?.content ?? '';
+  } catch {
+    // Unparseable output still needs to reach the caller so it can classify it.
+    return stdout;
+  }
+}
+
+/** Retries here because a refusal costs ~0.4s locally versus a round trip from Vercel. */
+async function runAgent(prompt, timeoutSeconds = 180) {
+  let last = '';
+  for (let attempt = 0; attempt < FAST_ATTEMPTS; attempt++) {
+    try {
+      last = await completeOnce(prompt, Math.min(timeoutSeconds, 90));
+    } catch (error) {
+      last = String(error?.stdout || error?.message || error);
+    }
+    if (last && !OVERLOADED.test(last)) return last;
+    await sleep(300 * (attempt + 1));
+  }
+  return last;
 }
 
 async function generateImage(prompt, timeoutSeconds = 200) {
