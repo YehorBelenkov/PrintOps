@@ -5,7 +5,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=printops
+# Runs as root because NemoClaw keeps the sandbox registration and the API keys
+# in /root/.nemoclaw; another user cannot reach the sandbox. The service binds
+# 127.0.0.1 only and never passes caller input to a shell.
+User=root
+Environment=HOME=/root
 WorkingDirectory=/opt/printops
 Environment=PORT=8787
 Environment=SANDBOX=igor
