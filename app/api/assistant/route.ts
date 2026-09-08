@@ -137,9 +137,14 @@ export async function POST(request: NextRequest) {
   const reply = (extractJsonArray(stdout)?.[0] ?? null) as Record<string, unknown> | null;
 
   if (!reply) {
+    const text = stripCliNoise(stdout).trim();
+    // Malformed JSON is the agent failing, not a message. Showing it raw is worse than useless.
+    const unreadable = !text || /^[[{]/.test(text);
     return NextResponse.json({
       mode: 'reply',
-      text: stripCliNoise(stdout).slice(0, 800) || 'Igor returned nothing.',
+      text: unreadable
+        ? 'I could not read that response. Try rephrasing the request.'
+        : text.slice(0, 800),
     });
   }
 
@@ -222,8 +227,19 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ mode: 'reply', text: 'There is no dashboard open to edit.' });
   }
 
-  const { state: nextState, results } = applyOperations(state, reply.operations);
   const note = typeof reply.note === 'string' ? reply.note.trim().slice(0, 600) : null;
+
+  // Without operations there is nothing to apply; claiming "Applied 1 of 1" would be a lie.
+  if (!operations) {
+    return NextResponse.json({
+      mode: 'reply',
+      text:
+        note ||
+        'I could not turn that into a change. Try naming the panel and what should change.',
+    });
+  }
+
+  const { state: nextState, results } = applyOperations(state, operations);
 
   return NextResponse.json({ mode: 'workspace', state: nextState, results, note });
 }

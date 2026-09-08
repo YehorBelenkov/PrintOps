@@ -115,6 +115,11 @@ ${describeTables()}
   ]
 
 WIDGETS: ${widgets}
+Stickers generated in this app are NOT database rows and never come from a table.
+They are saved to the sticker library. To show them, add a panel with widget
+"stickerLibrary" — it reads the real saved artwork.
+  "show the images we generated" -> {"op":"addPanel","name":"Sticker Library","widget":"stickerLibrary","col":1,"colSpan":6,"row":<first free row>,"rowSpan":2}
+"designGallery" shows sample shop artwork, not the stickers this app generated.
 
 PALETTES: ${palettes}
 
