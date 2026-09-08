@@ -1,0 +1,20 @@
+[Unit]
+Description=PrintOps agent service
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=printops
+WorkingDirectory=/opt/printops
+Environment=PORT=8787
+Environment=SANDBOX=igor
+Environment=DATA_DIR=/opt/printops/data
+# Set the shared secret here, then: chmod 600 this file
+Environment=AGENT_TOKEN=replace-me
+ExecStart=/usr/bin/node /opt/printops/server.mjs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

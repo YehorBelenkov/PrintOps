@@ -1,0 +1,48 @@
+# Narrow egress for fal image generation.
+# Schema mirrors ~/.nemoclaw/source/nemoclaw-blueprint/policies/presets/*.yaml
+# Must be LF-only: CRLF parses in preview but fails on apply.
+#
+# Install:
+#   cp fal-policy.yaml ~/.nemoclaw/source/nemoclaw-blueprint/policies/presets/fal-image.yaml
+#   sed -i 's/\r$//' ~/.nemoclaw/source/nemoclaw-blueprint/policies/presets/fal-image.yaml
+#   nemoclaw igor policy-add fal-image --yes
+
+preset:
+  name: fal-image
+  description: "fal image generation API access"
+
+network_policies:
+  fal-image:
+    name: fal-image
+    endpoints:
+      - host: fal.run
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: GET, path: "/**" }
+      - host: queue.fal.run
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: "/**" }
+          - allow: { method: GET, path: "/**" }
+      # Generated images download from rotating fal CDN subdomains.
+      - host: "*.fal.media"
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/**" }
+      - host: fal.media
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/**" }
+    binaries:
+      - { path: /usr/local/bin/openclaw }
+      - { path: /usr/local/bin/node }
+      - { path: /usr/bin/node }

@@ -1,0 +1,19 @@
+# Public TLS endpoint for the agent service.
+# Caddy obtains and renews the certificate automatically.
+# The agent itself only listens on 127.0.0.1, so this is the sole way in.
+
+agent.example.com {
+	encode gzip
+
+	# Vercel is the only expected caller; adjust or drop if you test from elsewhere.
+	@blocked not path /health /v1/*
+	respond @blocked 404
+
+	reverse_proxy 127.0.0.1:8787 {
+		# Requests wait on a 120B model, well past the default proxy timeout.
+		transport http {
+			read_timeout 240s
+			write_timeout 240s
+		}
+	}
+}
