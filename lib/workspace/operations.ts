@@ -102,6 +102,32 @@ function firstFreeRow(
 }
 
 /**
+ * Pulls every panel up and then left into free space. The model places panels one at a
+ * time and never rebalances, so without this the grid drifts into holes and dead bands.
+ * Only ever moves panels towards the origin, so it cannot undo a requested position.
+ */
+function compactGrid(state: WorkspaceState): void {
+  const ordered = [...state.panels].sort((a, b) => a.row - b.row || a.col - b.col);
+  const probe: WorkspaceState = { ...state, panels: [] };
+
+  for (const panel of ordered) {
+    while (
+      panel.row > 1 &&
+      !overlaps(probe, panel.col, panel.colSpan, panel.row - 1, panel.rowSpan)
+    ) {
+      panel.row--;
+    }
+    while (
+      panel.col > 1 &&
+      !overlaps(probe, panel.col - 1, panel.colSpan, panel.row, panel.rowSpan)
+    ) {
+      panel.col--;
+    }
+    probe.panels.push(panel);
+  }
+}
+
+/**
  * Keeps `anchorId` exactly where it was put and slides everything else down until the
  * grid is clean. Moving a panel onto a taken spot should displace its neighbours, not
  * quietly relocate the panel the user asked to move.
@@ -445,5 +471,6 @@ export function applyOperations(
     }
   }
 
+  compactGrid(next);
   return { state: next, results };
 }
